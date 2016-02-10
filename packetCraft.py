@@ -1,5 +1,10 @@
 #!/usr/bin/python
 
+# When scapy sends a SYN packet, the kernel doesn't see it. So when the kernel 
+# receives a SYN-ACK back, it typically sends a RST packet, because it didn't
+# initiate the conversation.  To supress these RST packets from leaving our box:
+# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP
+
 from scapy.all import *
 import re
 import sys
@@ -85,8 +90,8 @@ class PacketCraft:
 		send(packet)
 
 
-target = '65.55.33.135'			# TODO: Read in target IP addresses from a file
-tlsTTL = 15						# TODO: Optimal TTL to start with based on traceroute?
+target = '128.32.80.167'			# TODO: Read in target IP addresses from a file
+tlsTTL = 20						# TODO: Optimal TTL to start with based on traceroute?
 win = re.compile('.*START ?TLS*', re.IGNORECASE)
 lose = re.compile("5\d\d*")
 result = "test"
@@ -100,7 +105,7 @@ except IndexError as e:			# IndexError when the TTL is too short
 	print "IndexError"
 
 while (result != win):
-	tlsTTL = tlsTTL + 1
+	tlsTTL = tlsTTL - 1
 	smtpConnection.get220banner()
 	smtpConnection.get250extensions()
 	try:
