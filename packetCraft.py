@@ -4,6 +4,8 @@
 # receives a SYN-ACK back, it typically sends a RST packet, because it didn't
 # initiate the conversation.  To supress these RST packets from leaving our box:
 # sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP
+# Install Scapy
+# sudo apt-get install python-scapy
 
 from scapy.all import *
 import re
@@ -116,6 +118,6 @@ while (result != win):
 	if win.match(result):
 		print "win"
 		break			# all good servers will end up in this case, along with the bad nodes that strip the STARTTLS
-	if lose.match(result):
-		print "went too far"
-		break			# no good servers will end up in this case, only 500-level errors here, nodes that have already been stripped
+	# if lose.match(result):
+	# 	print "went too far"
+	# 	break			# no good servers will end up in this case, only 500-level errors here, nodes that have already been stripped
