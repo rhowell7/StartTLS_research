@@ -11,6 +11,12 @@ from scapy.all import *
 import re
 import sys
 
+size250 = re.compile('.*?SIZE.*?', re.DOTALL)
+Hello = re.compile('.*Hello.*', re.IGNORECASE)
+two50 = re.compile('250.*', re.IGNORECASE)
+win = re.compile('.*START ?TLS.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
+error500 = re.compile('500.*', re.IGNORECASE)
+
 """
 Sends a STARTTLS request to mail servers
 """
@@ -48,18 +54,39 @@ class PacketCraft:
 	def get250extensions(self):
 		print '[Get 250 Extensions]'
 		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=101,ack=self.ack)/("EHLO ME\r\n")
-		ehloACK = sr1(ehlo)
+		send(ehlo)
 		extensions = sniff(filter="host {}".format(self.target), count=1)
-		tcp_packet = extensions[0].payload.payload
 		
-		if (len(ehloACK.payload.payload) > 10):
-			self.ack = self.ack + len(ehloACK.payload.payload)
-		else:
-			self.ack = self.ack + len(tcp_packet.payload)
+
+		for x in range(0, 4):
+			ext_packet = str(extensions[0].payload.payload.payload)
+			if size250.match(ext_packet):
+				print 'Packet contains 250-SIZE'
+				break
+			elif error500.match(ext_packet):
+				print 'Packet contains 500'
+				break
+			elif Hello.match(ext_packet):
+				tcp_packet = extensions[0].payload.payload
+				self.ack = self.ack + len(tcp_packet.payload)
+
+				ip = IP(dst=self.target)
+				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+				send(ack)
+				extensions = sniff(filter="host {}".format(self.target), count=1)
+			else:
+				print "Packet does not contain SIZE or 500"
+				#print ext_packet
+				extensions = sniff(filter="host {}".format(self.target), count=1)
+
+		tcp_packet = extensions[0].payload.payload
+		self.ack = self.ack + len(tcp_packet.payload)
 
 		ip = IP(dst=self.target)
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
 		send(ack)
+
+
 
 		print '[Got 250 Extensions]'
 		print "{}".format(extensions[0].payload.payload.payload)
@@ -83,6 +110,98 @@ class PacketCraft:
 		f.close()
 
 		return str(TLSbanner.load)
+		########################################################################
+		# print '[Try StartTLS]'
+		# ip = IP(dst=self.target, ttl=tlsTTL)
+		# startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=110,ack=self.ack)/("STARTTLS\r\n")
+		# # TLSbanner = sr1(startTLS)					# TODO: This [sr1] needs to time out after a while, or use send/sniff instead
+		# send(startTLS)
+		# # TLSack = sniff(filter="host {}".format(self.target), count=1)
+		# TLSbanner = sniff(filter="host {}".format(self.target), count=1)
+		# # print TLSbanner[0].summary()
+		# # print 'TLSbanner.payload: {}'.format(TLSbanner[0].payload)
+		# # print 'TLSbanner.payload.payload: {}'.format(TLSbanner[0].payload.payload)
+		# print 'TLSbanner.payload.payload.payload: {}'.format(TLSbanner[0].payload.payload.payload)
+
+		# for x in range(0, 4):
+		# 	tls_packet = str(TLSbanner[0].payload.payload.payload)
+		# 	if win.match(tls_packet):
+		# 		print 'Packet contains StartTLS'
+		# 		break
+		# 	elif error500.match(tls_packet):
+		# 		print 'Packet contains 500'
+		# 		break
+		# 	else:
+		# 		print "Packet does not contain StartTLS or 500"
+		# 		print tls_packet
+		# 		try:
+		# 			icmp_packet = str(TLSbanner.load)
+		# 			if win.match(icmp_packet):
+		# 				tls_packet = icmp_packet
+		# 				break
+		# 		except AttributeError as e:			# IndexError when the TTL is too short
+		# 			print "AttributeError"
+				
+				
+		# 		TLSbanner = sniff(filter="host {}".format(self.target), count=1)
+
+		# self.ack = self.ack + len(TLSbanner[0].payload.payload.payload)
+		# ack = TCP(sport=self.sport, dport=self.dport, flags="A", seq=120, ack=self.ack)
+		# send(ip/ack)
+
+		# print '[Got STARTTLS Response]'
+		# print '{}'.format(TLSbanner[0].payload.payload.payload)
+		
+		# ip_src=TLSbanner[0][IP].src
+		# f = open('results.{}.txt'.format(str(self.target)), 'a')
+		# f.write('Hop {}: '.format(str(tlsTTL)) + 'Banner received from {}'.format(str(ip_src)) + ': {}'.format(tls_packet))
+		# f.close()
+
+		# return str(tls_packet)
+		########################################################################
+		# print '[Try StartTLS]'
+		# ip = IP(dst=self.target, ttl=tlsTTL)
+		# startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=110,ack=self.ack)/("STARTTLS\r\n")
+
+		# send(startTLS)
+		# TLSbanner = sniff(filter="host {}".format(self.target), count=1)
+		# print TLSbanner[0].summary()
+		# print 'TLSbanner.load: {}'.format(TLSbanner[0].load)
+
+
+		# for x in range(0, 3):
+		# 	tls_packet = str(TLSbanner[0].load)
+		# 	# if win.match(tls_packet):
+		# 	# 	break
+		# 	if two50.match(tls_packet):
+		# 		print 'Packet contains 250'
+		# 		print tls_packet
+		# 		# ack the 250 extensions
+		# 		ip = IP(dst=self.target)
+		# 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+		# 		send(ack)
+		# 		# try to STARTTLS again
+		# 		send(startTLS)
+		# 		TLSbanner = sniff(filter="host {}".format(self.target), count=1)
+		# 	else:
+		# 		print "Packet does not contain 250"
+		# 		# TLSbanner = sniff(filter="host {}".format(self.target), count=1)
+
+		# 		break
+
+		# self.ack = self.ack + len(TLSbanner[0].payload.payload.payload)
+		# ack = TCP(sport=self.sport, dport=self.dport, flags="A", seq=120, ack=self.ack)
+		# send(ip/ack)
+
+		# print '[Got STARTTLS Response]'
+		# print '{}'.format(TLSbanner[0].load)
+		
+		# ip_src=TLSbanner[0][IP].src
+		# f = open('results.{}.txt'.format(str(self.target)), 'a')
+		# f.write('Hop {}: '.format(str(tlsTTL)) + 'Banner received from {}'.format(str(ip_src)) + ': {}'.format(TLSbanner[0].load))
+		# f.close()
+
+		# return str(TLSbanner[0].load)
 
 	def closeConnection(self):
 		FINpacket = IP(dst=self.target)/TCP(sport=self.sport,dport=self.dport,flags="FA",seq=120, ack=self.ack)
@@ -92,7 +211,7 @@ class PacketCraft:
 		send(packet)
 
 
-target = '128.32.80.167'			# TODO: Read in target IP addresses from a file
+target = '131.193.42.60'			# TODO: Read in target IP addresses from a file
 tlsTTL = 20						# TODO: Optimal TTL to start with based on traceroute?
 win = re.compile('.*START ?TLS*', re.IGNORECASE)
 lose = re.compile("5\d\d*")
@@ -106,7 +225,7 @@ try:
 except IndexError as e:			# IndexError when the TTL is too short
 	print "IndexError"
 
-while (result != win):
+while not win.match(result):
 	tlsTTL = tlsTTL - 1
 	smtpConnection.get220banner()
 	smtpConnection.get250extensions()
@@ -117,6 +236,7 @@ while (result != win):
 
 	if win.match(result):
 		print "win"
+		#smtpConnection.closeConnection()
 		break			# all good servers will end up in this case, along with the bad nodes that strip the STARTTLS
 	# if lose.match(result):
 	# 	print "went too far"
