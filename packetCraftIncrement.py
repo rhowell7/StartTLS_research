@@ -116,6 +116,8 @@ class PacketCraft:
 		# TODO: Print output to JSON dict
 		
 
+		
+
 		return str(TLSbanner.load)
 
 	def closeConnection(self):
@@ -130,7 +132,7 @@ class PacketCraft:
 with open('ipAddresses.txt') as inFile:
 	for line in inFile:
 		target = str(line.rstrip('\n'))
-		tlsTTL = 20						# TODO: Optimal TTL to start with based on traceroute?
+		tlsTTL = 5						# TODO: Optimal TTL to start with based on traceroute?
 		win = re.compile('.*START ?TLS*', re.IGNORECASE)
 		lose = re.compile("5\d\d*")
 		result = "test"
@@ -143,7 +145,7 @@ with open('ipAddresses.txt') as inFile:
 		except IndexError as e:			# IndexError when the TTL is too short
 			print "IndexError"
 
-		while not win.match(result):
+		while not lose.match(result):
 			tlsTTL = tlsTTL - 1
 			smtpConnection.get220banner()
 			smtpConnection.get250extensions()
@@ -155,7 +157,7 @@ with open('ipAddresses.txt') as inFile:
 			if win.match(result):
 				print "win"
 				#smtpConnection.closeConnection()
-				break			# all good servers will end up in this case, along with the bad nodes that strip the STARTTLS
-			# if lose.match(result):
-			# 	print "went too far"
-			# 	break			# no good servers will end up in this case, only 500-level errors here, nodes that have already been stripped
+				# break			# all good servers will end up in this case, along with the bad nodes that strip the STARTTLS
+			if lose.match(result):
+				print "went too far"
+				break			# no good servers will end up in this case, only 500-level errors here, nodes that have already been stripped
