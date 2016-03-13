@@ -64,7 +64,8 @@ class PacketCraft:
 		print "[2. Get 250 Extensions for {}]".format(self.target)
 		# print self.target
 		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("EHLO ME\r\n") #101
-		# extensions = sr1(ehlo, verbose=0, timeout=5)
+		# TODO: # extensions = sr1(ehlo, verbose=0, timeout=5)
+		#		But then we also need to adjust every instance of extensions[0].payload.payload
 		send(ehlo, verbose=0)
 		extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 		
@@ -112,6 +113,9 @@ class PacketCraft:
 						tcp_packet = extensions[0].payload.payload
 					except IndexError as e:
 						print "IndexError"
+
+					# TODO: Why isn't this ACK packet adding the correct length??
+					#		Is this the right ACK packet I'm trying to adjust?
 					self.ack = self.ack + len(tcp_packet.payload)
 					self.seq = self.seq + 9
 					ip = IP(dst=self.target)
@@ -288,11 +292,16 @@ with open('ipAddresses.txt') as inFile:
 		done = smtpConnection.get220banner()
 		if done is 1:
 			continue
+			# TODO: keep a list of all the fails
+
 		done = smtpConnection.get250extensions()
 		if done is 1:
 			smtpConnection.closeConnection()
+			# TODO: keep a list of all the fails
 			continue
 		smtpConnection.startTLS(1)
+		# TODO: return a dict with the results for each target IP address
+		#		save the list of dicts somewhere?
 		smtpConnection.closeConnection()
 
 		# for i in range (4, 28):
