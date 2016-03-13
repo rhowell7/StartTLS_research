@@ -43,7 +43,11 @@ class PacketCraft:
 
 		self.ack = synack.seq + 1
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=101, ack=self.ack)
-		banner220 = sr1(ack, verbose=0)
+		banner220 = sr1(ack, verbose=0, timeout=11)
+		if banner220 is None:
+			print "No 220 banner received from {}  :(".format(self.target)
+			print "[Continue]\n\n"
+			return 1
 
 		self.ack = self.ack + len(banner220.payload.payload)
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=101, ack=self.ack)
@@ -69,11 +73,17 @@ class PacketCraft:
 				continue
 
 			if size250.match(ext_packet):
-				# print 'Packet contains 250-SIZE'
+				print 'Packet contains 250-SIZE. Got extensions, OK to proceed.'
 				break
 			elif error500.match(ext_packet):
-				# print 'Packet contains 500'
-				break
+				print "Packet contains 500 Error: {}".format(ext_packet) ,
+				print 'Sending HELO instead'
+				helo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=101,ack=self.ack)/("HELO ME\r\n")
+				extensions = sr1(helo, verbose=0, timeout=5)
+				ext_packet = str(extensions[0].payload.payload.payload)
+				print "Sent HELO, got {}".format(ext_packet) ,
+				# extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
+				continue
 			elif Hello.match(ext_packet):
 				# tcp_packet = extensions[0].payload.payload  # IndexError
 				try:
