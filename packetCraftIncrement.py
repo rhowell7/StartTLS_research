@@ -38,7 +38,7 @@ class PacketCraft:
 		synack = sr1(syn, verbose=0, timeout=5)
 		if synack is None:
 			print "No response to SYN from {}  :(".format(self.target)
-			print "Continue\n"
+			print "[Continue]\n\n"
 			return 1
 
 		self.ack = synack.seq + 1
@@ -49,7 +49,7 @@ class PacketCraft:
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=101, ack=self.ack)
 		send(ack, verbose=0)
 
-		print "{}".format(banner220.payload.payload)
+		print "{}".format(banner220.payload.payload) ,
 		# print "[Got 220 Banner for {}]".format(self.target)
 		return 0
 		
@@ -61,7 +61,7 @@ class PacketCraft:
 		send(ehlo, verbose=0)
 		extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 		
-		for x in range(0, 4):
+		for x in range(1, 5):
 			try:
 				ext_packet = str(extensions[0].payload.payload.payload)
 			except IndexError as e:
@@ -105,7 +105,7 @@ class PacketCraft:
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			else:
-				print "Packet does not contain SIZE or 500"
+				print "Attempt %d/5: Packet does not contain SIZE or 500" % x
 				#print ext_packet
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 
@@ -115,7 +115,7 @@ class PacketCraft:
 		except IndexError as e:
 			print "IndexError"
 			print "Could not get 250-Extensions from {}".format(self.target)
-			print "Continue\n"
+			print "[Continue]"
 			return 1
 
 		self.ack = self.ack + len(tcp_packet.payload)
@@ -157,24 +157,24 @@ class PacketCraft:
 				print "No response to STARTTLS request from hop %d" % i
 				continue
 			elif done.match(TLSbanner.src):
-				print "%d hops away: " % i , TLSbanner.src
+				print "%d hops away: " % i , TLSbanner.src ,
 				try:
-					print '{}'.format(TLSbanner.load)
+					print 'returned: {}'.format(TLSbanner.load) ,
 					mail_server["response_from_target"] = TLSbanner.load
 			 	except AttributeError as e:
-			 		print "AttributeError"
-				print "Done"
+			 		print "returned: AttributeError"
+				print "Reached the Target IP"
 				# smtpConnection.closeConnection()
 				break
 			else:
-				print "%d hops away: " % i , TLSbanner.src
+				print "%d hops away: " % i , TLSbanner.src , 
 				mail_server["ICMP_response_IP"] = TLSbanner.src
 				# print '{}'.format(TLSbanner.load)
 				try:
-					print '{}'.format(TLSbanner.load)
+					print 'returned: {}'.format(TLSbanner.load) ,
 					mail_server["ICMP_response_payload"] = TLSbanner.load
 			 	except AttributeError as e:
-			 		print "AttributeError"
+			 		print "returned: AttributeError"
 			 		mail_server["ICMP_response_payload"] = "ICMP_response_did_not_contain_payload"
 
 		print "Dict for {}".format(self.target)
