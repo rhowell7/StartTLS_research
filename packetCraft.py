@@ -114,7 +114,19 @@ class PacketCraft:
 		f.write('Hop {}: '.format(str(tlsTTL)) + 'Banner received from {}'.format(str(ip_src)) + ': {}'.format(TLSbanner.load))
 		f.close()
 		# TODO: Print output to JSON dict
-		
+		# create object called scan<targetIP>?  New dict for each target IP?
+		scan = {}
+		scan['targetIP'] = self.target
+		scan['hop'] = tlsTTL
+		if error500.match(str(TLSbanner)):
+			scan['responseFrom'] = ip_src
+			scan['error'] = TLSbanner.load
+		elif win.match(str(TLSbanner)):
+			scan['responseFrom'] = ip_src
+			scan['pingPacket'] = TLSbanner.load
+		# else:
+			# startTLS(tlsTTL)	# Make this a recursive call?
+
 
 		return str(TLSbanner.load)
 
