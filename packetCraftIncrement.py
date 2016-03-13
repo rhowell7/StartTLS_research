@@ -34,15 +34,17 @@ class PacketCraft:
 		print "[1. Get 220 Banner for {}]".format(self.target)
 		self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop
 		ip = IP(dst=self.target)
-		syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=100)
-		synack = sr1(syn, verbose=0, timeout=5)
+		syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
+		synack = sr1(syn, verbose=0, timeout=10)
 		if synack is None:
 			print "No response to SYN from {}  :(".format(self.target)
 			print "[Continue]\n\n"
 			return 1
 
 		self.ack = synack.seq + 1
-		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=101, ack=self.ack)
+		self.seq = self.seq + 1
+
+		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
 		banner220 = sr1(ack, verbose=0, timeout=11)
 		if banner220 is None:
 			print "No 220 banner received from {}  :(".format(self.target)
@@ -50,7 +52,7 @@ class PacketCraft:
 			return 1
 
 		self.ack = self.ack + len(banner220.payload.payload)
-		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=101, ack=self.ack)
+		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
 		send(ack, verbose=0)
 
 		print "{}".format(banner220.payload.payload) ,
@@ -61,11 +63,13 @@ class PacketCraft:
 	def get250extensions(self):
 		print "[2. Get 250 Extensions for {}]".format(self.target)
 		# print self.target
-		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=101,ack=self.ack)/("EHLO ME\r\n")
+		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("EHLO ME\r\n") #101
+		# extensions = sr1(ehlo, verbose=0, timeout=5)
 		send(ehlo, verbose=0)
 		extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 		
 		for x in range(1, 5):
+			print "Attempt %d/5: " % x ,
 			try:
 				ext_packet = str(extensions[0].payload.payload.payload)
 			except IndexError as e:
@@ -78,14 +82,48 @@ class PacketCraft:
 			elif error500.match(ext_packet):
 				print "Packet contains 500 Error: {}".format(ext_packet) ,
 				print 'Sending HELO instead'
-				helo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=101,ack=self.ack)/("HELO ME\r\n")
+
+				# Ack the 500-error
+				# self.seq = self.seq + 9
+				# ip = IP(dst=self.target)
+				# ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
+				# send(ack, verbose=0)
+				try:
+					tcp_packet = extensions[0].payload.payload
+				except IndexError as e:
+					print "IndexError"
+				self.ack = self.ack + len(tcp_packet.payload)
+				self.seq = self.seq + 9
+				ip = IP(dst=self.target)
+				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
+				send(ack, verbose=0)
+
+				# Send HELO instead
+				helo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("HELO ME\r\n") #110
 				extensions = sr1(helo, verbose=0, timeout=5)
-				ext_packet = str(extensions[0].payload.payload.payload)
+				ext_packet = str(extensions[0].payload.payload)
+				
 				print "Sent HELO, got {}".format(ext_packet) ,
-				# extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
+				# if EHLO fails, but HELO works, they won't send 250-SIZE, so break here
+				if Hello.match(ext_packet):
+					print "Matches Hello packet"
+					# ACK it
+					try:
+						tcp_packet = extensions[0].payload.payload
+					except IndexError as e:
+						print "IndexError"
+					self.ack = self.ack + len(tcp_packet.payload)
+					self.seq = self.seq + 9
+					ip = IP(dst=self.target)
+					ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
+					send(ack, verbose=0)
+
+					break
+
 				continue
 			elif Hello.match(ext_packet):
 				# tcp_packet = extensions[0].payload.payload  # IndexError
+				print "Packet contains Hello"
 				try:
 					tcp_packet = extensions[0].payload.payload
 				except IndexError as e:
@@ -93,13 +131,15 @@ class PacketCraft:
 					continue
 
 				self.ack = self.ack + len(tcp_packet.payload)
+				self.seq = self.seq + 9
 
 				ip = IP(dst=self.target)
-				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 				send(ack, verbose=0)
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			elif two50.match(ext_packet):
+				print "Packet contains 250"
 				# tcp_packet = extensions[0].payload.payload  # IndexError
 				try:
 					tcp_packet = extensions[0].payload.payload
@@ -108,14 +148,15 @@ class PacketCraft:
 					continue
 
 				self.ack = self.ack + len(tcp_packet.payload)
+				self.seq = self.seq + 9
 
 				ip = IP(dst=self.target)
-				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 				send(ack, verbose=0)
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			else:
-				print "Attempt %d/5: Packet does not contain SIZE or 500" % x
+				print "Packet does not contain SIZE or 500"
 				#print ext_packet
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 
@@ -129,9 +170,10 @@ class PacketCraft:
 			return 1
 
 		self.ack = self.ack + len(tcp_packet.payload)
+		self.seq = self.seq + 9
 
 		ip = IP(dst=self.target)
-		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 		send(ack, verbose=0)
 
 		# print "{}".format(extensions[0].payload.payload.payload)
@@ -152,7 +194,7 @@ class PacketCraft:
 		for i in range (4, 30):
 			# result = smtpConnection.startTLS(i)
 			ip = IP(dst=self.target, ttl=i)
-			startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=110,ack=self.ack)/("STARTTLS\r\n")
+			startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("STARTTLS\r\n") #110
 			TLSbanner = sr1(startTLS, verbose=0, timeout=4)
 
 			# send(startTLS)
@@ -168,14 +210,16 @@ class PacketCraft:
 				continue
 			elif done.match(TLSbanner.src):
 				print "%d hops away: " % i , TLSbanner.src ,
+				print "Reached the Target IP"
 				try:
 					print 'returned: {}'.format(TLSbanner.load) ,
 					mail_server["response_from_target"] = TLSbanner.load
+					break
 			 	except AttributeError as e:
-			 		print "returned: AttributeError"
-				print "Reached the Target IP"
-				# smtpConnection.closeConnection()
-				break
+			 		print "returned: AttributeError. Trying once more.."
+			 		i = i-1
+
+				# break
 			else:
 				print "%d hops away: " % i , TLSbanner.src , 
 				mail_server["ICMP_response_IP"] = TLSbanner.src
