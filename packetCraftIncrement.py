@@ -1,16 +1,13 @@
 #!/usr/bin/python
 
-# When scapy sends a SYN packet, the kernel doesn't see it. So when the kernel 
-# receives a SYN-ACK back, it typically sends a RST packet, because it didn't
-# initiate the conversation.  To supress these RST packets from leaving our box:
-# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP
-# Install Scapy
 # sudo apt-get install python-scapy
+# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP
 
 from scapy.all import *
 import re
 import sys
 import json
+import pprint
 
 tlsTTL = 3
 size250 = re.compile('.*?SIZE.*?', re.DOTALL)
@@ -35,13 +32,13 @@ class PacketCraft:
 
 	def get220banner(self):
 		print "[1. Get 220 Banner for {}]".format(self.target)
-		# print self.target
 		self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop
 		ip = IP(dst=self.target)
 		syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=100)
 		synack = sr1(syn, verbose=0, timeout=5)
 		if synack is None:
-			print 'No response :('
+			print "No response to SYN from {}  :(".format(self.target)
+			print "Continue\n"
 			return 1
 
 		self.ack = synack.seq + 1
@@ -54,6 +51,7 @@ class PacketCraft:
 
 		print "{}".format(banner220.payload.payload)
 		# print "[Got 220 Banner for {}]".format(self.target)
+		return 0
 		
 
 	def get250extensions(self):
@@ -61,15 +59,14 @@ class PacketCraft:
 		# print self.target
 		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=101,ack=self.ack)/("EHLO ME\r\n")
 		send(ehlo, verbose=0)
-		extensions = sniff(filter="host {}".format(self.target), count=1)
+		extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 		
 		for x in range(0, 4):
-			# ext_packet = str(extensions[0].payload.payload.payload)  # IndexError
 			try:
 				ext_packet = str(extensions[0].payload.payload.payload)
 			except IndexError as e:
 				print "IndexError"
-
+				continue
 
 			if size250.match(ext_packet):
 				# print 'Packet contains 250-SIZE'
@@ -78,20 +75,49 @@ class PacketCraft:
 				# print 'Packet contains 500'
 				break
 			elif Hello.match(ext_packet):
-				tcp_packet = extensions[0].payload.payload
+				# tcp_packet = extensions[0].payload.payload  # IndexError
+				try:
+					tcp_packet = extensions[0].payload.payload
+				except IndexError as e:
+					print "IndexError"
+					continue
+
 				self.ack = self.ack + len(tcp_packet.payload)
 
 				ip = IP(dst=self.target)
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
 				send(ack, verbose=0)
 				self.ack = self.ack - len(tcp_packet.payload)
-				extensions = sniff(filter="host {}".format(self.target), count=1)
+				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
+			elif two50.match(ext_packet):
+				# tcp_packet = extensions[0].payload.payload  # IndexError
+				try:
+					tcp_packet = extensions[0].payload.payload
+				except IndexError as e:
+					print "IndexError"
+					continue
+
+				self.ack = self.ack + len(tcp_packet.payload)
+
+				ip = IP(dst=self.target)
+				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=110, ack=self.ack)
+				send(ack, verbose=0)
+				self.ack = self.ack - len(tcp_packet.payload)
+				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			else:
 				print "Packet does not contain SIZE or 500"
 				#print ext_packet
-				extensions = sniff(filter="host {}".format(self.target), count=1)
+				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 
-		tcp_packet = extensions[0].payload.payload
+		# tcp_packet = extensions[0].payload.payload
+		try:
+			tcp_packet = extensions[0].payload.payload
+		except IndexError as e:
+			print "IndexError"
+			print "Could not get 250-Extensions from {}".format(self.target)
+			print "Continue\n"
+			return 1
+
 		self.ack = self.ack + len(tcp_packet.payload)
 
 		ip = IP(dst=self.target)
@@ -100,9 +126,12 @@ class PacketCraft:
 
 		# print "{}".format(extensions[0].payload.payload.payload)
 		# print "[Got 250 Extensions for {}]".format(self.target)
+		return 0
 		
 	def startTLS(self, tlsTTL):
 		print "[3. Try StartTLS for {}]".format(self.target)
+		mail_server = {}
+		mail_server["target_ip"] = self.target
 		done = re.compile(target)
 		# ip = IP(dst=self.target, ttl=tlsTTL)
 		# startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=110,ack=self.ack)/("STARTTLS\r\n")
@@ -125,21 +154,31 @@ class PacketCraft:
 			# serverIP = str(TLSbanner[0].src)
 			if TLSbanner is None:
 				# No reply
-				print "None"
-				break
+				print "No response to STARTTLS request from hop %d" % i
+				continue
 			elif done.match(TLSbanner.src):
 				print "%d hops away: " % i , TLSbanner.src
-				print '{}'.format(TLSbanner.load)
+				try:
+					print '{}'.format(TLSbanner.load)
+					mail_server["response_from_target"] = TLSbanner.load
+			 	except AttributeError as e:
+			 		print "AttributeError"
 				print "Done"
 				# smtpConnection.closeConnection()
 				break
 			else:
 				print "%d hops away: " % i , TLSbanner.src
+				mail_server["ICMP_response_IP"] = TLSbanner.src
 				# print '{}'.format(TLSbanner.load)
 				try:
 					print '{}'.format(TLSbanner.load)
+					mail_server["ICMP_response_payload"] = TLSbanner.load
 			 	except AttributeError as e:
 			 		print "AttributeError"
+			 		mail_server["ICMP_response_payload"] = "ICMP_response_did_not_contain_payload"
+
+		print "Dict for {}".format(self.target)
+		pprint.pprint(mail_server, width=1)
 
 		# self.ack = self.ack + len(TLSbanner[0].payload.payload)
 		# ack = TCP(sport=self.sport, dport=self.dport, flags="A", seq=120, ack=self.ack)
@@ -195,7 +234,10 @@ with open('ipAddresses.txt') as inFile:
 		done = smtpConnection.get220banner()
 		if done is 1:
 			continue
-		smtpConnection.get250extensions()
+		done = smtpConnection.get250extensions()
+		if done is 1:
+			smtpConnection.closeConnection()
+			continue
 		smtpConnection.startTLS(1)
 		smtpConnection.closeConnection()
 
