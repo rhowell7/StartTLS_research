@@ -9,12 +9,13 @@ import sys
 import json
 import pprint
 
-tlsTTL = 3
+# number of hops away to start the StartTLS traceroute
+tlsTTL = 4
 size250 = re.compile('.*?SIZE.*?', re.DOTALL)
 Hello = re.compile('.*Hello.*', re.IGNORECASE)
 two50 = re.compile('250.*', re.IGNORECASE)
 win = re.compile('.*START ?TLS.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
-error500 = re.compile('500.*', re.IGNORECASE)
+errorXXXX = re.compile('.*XXXX.*', re.IGNORECASE)
 
 
 """
@@ -37,7 +38,7 @@ class PacketCraft:
 		syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
 		synack = sr1(syn, verbose=0, timeout=10)
 		if synack is None:
-			print "No response to SYN from {}  :(".format(self.target)
+			print "No response to SYN from {} after 10 seconds  :(".format(self.target)
 			print "[Continue]\n\n"
 			return 1
 
@@ -64,8 +65,8 @@ class PacketCraft:
 		print "[2. Get 250 Extensions for {}]".format(self.target)
 		# print self.target
 		ehlo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("EHLO ME\r\n") #101
-		# TODO: # extensions = sr1(ehlo, verbose=0, timeout=5)
-		#		But then we also need to adjust every instance of extensions[0].payload.payload
+		# extensions = sr1(ehlo, verbose=0, timeout=5)  ## NO! the next packet is an ACK. need to sniff.
+
 		send(ehlo, verbose=0)
 		extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 		
@@ -80,15 +81,11 @@ class PacketCraft:
 			if size250.match(ext_packet):
 				print 'Packet contains 250-SIZE. Got extensions, OK to proceed.'
 				break
-			elif error500.match(ext_packet):
-				print "Packet contains 500 Error: {}".format(ext_packet) ,
+			elif errorXXXX.match(ext_packet):
+				print "Packet contains XXXX Error: {}".format(ext_packet) ,
 				print 'Sending HELO instead'
 
 				# Ack the 500-error
-				# self.seq = self.seq + 9
-				# ip = IP(dst=self.target)
-				# ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
-				# send(ack, verbose=0)
 				try:
 					tcp_packet = extensions[0].payload.payload
 				except IndexError as e:
@@ -105,26 +102,39 @@ class PacketCraft:
 				ext_packet = str(extensions[0].payload.payload)
 				
 				print "Sent HELO, got {}".format(ext_packet) ,
-				# if EHLO fails, but HELO works, they won't send 250-SIZE, so break here
+				# if EHLO fails, but HELO works, they won't send 250-SIZE, so break here??
 				if Hello.match(ext_packet):
 					print "Matches Hello packet"
-					# ACK it
+					# ACK the Hello-extensions
 					try:
 						tcp_packet = extensions[0].payload.payload
 					except IndexError as e:
 						print "IndexError"
 
-					# TODO: Why isn't this ACK packet adding the correct length??
+					# Fixed?: Why isn't this ACK packet adding the correct length??
 					#		Is this the right ACK packet I'm trying to adjust?
-					self.ack = self.ack + len(tcp_packet.payload)
+					# self.ack = self.ack + len(tcp_packet.payload) # = 0
+					self.ack = self.ack + len(tcp_packet)
+					# print "Adding {} bytes to the ack length".format(len(tcp_packet.payload)) # = 0
+					print "Adding {} bytes to the ack length".format(len(tcp_packet))
+
+					print "len(extensions[0].payload): {}".format(len(extensions[0].payload))
+					print "len(extensions[0].payload.payload): {}".format(len(extensions[0].payload.payload))
+					print "len(extensions[0].payload.payload.payload): {}".format(len(extensions[0].payload.payload.payload))
+
+					print "len(extensions.payload): {}".format(len(extensions.payload))
+					print "len(extensions.payload.payload): {}".format(len(extensions.payload.payload))
+					print "len(extensions.payload.payload.payload): {}".format(len(extensions.payload.payload.payload))
+
 					self.seq = self.seq + 9
 					ip = IP(dst=self.target)
 					ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
 					send(ack, verbose=0)
+					print "Sent ack of length: {}".format(self.ack)
 
 					break
 
-				continue
+				# continue
 			elif Hello.match(ext_packet):
 				# tcp_packet = extensions[0].payload.payload  # IndexError
 				print "Packet contains Hello"
@@ -144,7 +154,6 @@ class PacketCraft:
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			elif two50.match(ext_packet):
 				print "Packet contains 250"
-				# tcp_packet = extensions[0].payload.payload  # IndexError
 				try:
 					tcp_packet = extensions[0].payload.payload
 				except IndexError as e:
@@ -160,8 +169,9 @@ class PacketCraft:
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			else:
-				print "Packet does not contain SIZE or 500"
-				#print ext_packet
+				print "Packet does not contain [SIZE | XXXX | Hello | 250]"
+				
+				# print ext_packet
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 
 		# tcp_packet = extensions[0].payload.payload
@@ -195,7 +205,7 @@ class PacketCraft:
 		# send(startTLS)
 		# TLSbanner = sniff(filter="host {}".format(self.target), count=1)
 
-		for i in range (4, 30):
+		for i in range (tlsTTL, 30):
 			# result = smtpConnection.startTLS(i)
 			ip = IP(dst=self.target, ttl=i)
 			startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("STARTTLS\r\n") #110
@@ -238,34 +248,6 @@ class PacketCraft:
 		print "Dict for {}".format(self.target)
 		pprint.pprint(mail_server, width=1)
 
-		# self.ack = self.ack + len(TLSbanner[0].payload.payload)
-		# ack = TCP(sport=self.sport, dport=self.dport, flags="A", seq=120, ack=self.ack)
-		# send(ip/ack)
-
-		# print '[Got STARTTLS Response]'
-		# print '{}'.format(TLSbanner.load)
-		
-		# ip_src=TLSbanner[IP].src
-		# f = open('results.{}.txt'.format(str(self.target)), 'a')
-		# f.write('Hop {}: '.format(str(tlsTTL)) + 'Banner received from {}'.format(str(ip_src)) + ': {}'.format(TLSbanner.load))
-		# f.close()
-		# TODO: Print output to JSON dict
-		# create object called scan<targetIP>?  New dict for each target IP?
-		# scan = {}
-		# scan['targetIP'] = self.target
-		# scan['hop'] = tlsTTL
-		# if error500.match(str(TLSbanner)):
-		# 	scan['responseFrom'] = ip_src
-		# 	scan['error'] = TLSbanner.load
-		# elif win.match(str(TLSbanner)):
-		# 	scan['responseFrom'] = ip_src
-		# 	scan['pingPacket'] = TLSbanner.load
-		# else:
-			# startTLS(tlsTTL)	# Make this a recursive call?
-
-
-		# return str(TLSbanner.load)
-		# return str(TLSbanner.src)
 
 	def closeConnection(self):
 		print "[4. Closing Connection to {}]".format(self.target)
@@ -278,6 +260,7 @@ class PacketCraft:
 
 
 with open('ipAddresses.txt') as inFile:
+	
 	for line in inFile:
 		target = str(line.rstrip('\n'))
 		#tlsTTL = 20						# TODO: Optimal TTL to start with based on traceroute?
@@ -299,41 +282,5 @@ with open('ipAddresses.txt') as inFile:
 			smtpConnection.closeConnection()
 			# TODO: keep a list of all the fails
 			continue
-		smtpConnection.startTLS(1)
-		# TODO: return a dict with the results for each target IP address
-		#		save the list of dicts somewhere?
+		smtpConnection.startTLS(tlsTTL)
 		smtpConnection.closeConnection()
-
-		# for i in range (4, 28):
-		# 	result = smtpConnection.startTLS(i)
-		# 	if result is None:
-		# 		# No reply
-		# 		break
-		# 	elif done.match(result):
-		# 		print "done"
-		# 		smtpConnection.closeConnection()
-		# 		break
-		# 	else:
-		# 		print "%d hops away: " % i , result
-
-		# try:
-		# 	result = smtpConnection.startTLS(tlsTTL)
-		# except IndexError as e:			# IndexError when the TTL is too short
-		# 	print "IndexError"
-
-		# while not lose.match(result):
-		# 	tlsTTL = tlsTTL - 1
-		# 	# smtpConnection.get220banner()
-		# 	# smtpConnection.get250extensions()
-		# 	try:
-		# 		result = smtpConnection.startTLS(tlsTTL)
-		# 	except IndexError as e:
-		# 		print "IndexError"
-
-		# 	if win.match(result):
-		# 		print "win"
-		# 		#smtpConnection.closeConnection()
-		# 		# break			# all good servers will end up in this case, along with the bad nodes that strip the STARTTLS
-		# 	if lose.match(result):
-		# 		print "went too far"
-		# 		break			# no good servers will end up in this case, only 500-level errors here, nodes that have already been stripped
