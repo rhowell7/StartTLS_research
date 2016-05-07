@@ -8,15 +8,18 @@ import re
 import sys
 import json
 import pprint
+import Queue
+
 
 # number of hops away to start the StartTLS traceroute
 tlsTTL = 4
-size250 = re.compile('.*?SIZE.*?', re.DOTALL)
-Hello = re.compile('.*Hello.*', re.IGNORECASE)
-two50 = re.compile('250.*', re.IGNORECASE)
-win = re.compile('.*START ?TLS.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
-errorXXXX = re.compile('.*XXXX.*', re.IGNORECASE)
-
+size250 = re.compile('.*?S ?I ?Z ?E.*?', re.DOTALL)
+Hello = re.compile('.*H ?e ?l ?l ?o.*', re.IGNORECASE)
+two50 = re.compile('2 ?5 ?0.*', re.IGNORECASE)
+win = re.compile('.*S ?T ?A ?R ?T ?T ?L ?S.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
+errorXXXX = re.compile('.*X ?X ?X ?X.*', re.IGNORECASE)
+timeout220 = 3
+timeoutTTL = 1
 
 """
 Sends a STARTTLS request to mail servers
@@ -36,9 +39,9 @@ class PacketCraft:
 		self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop
 		ip = IP(dst=self.target)
 		syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
-		synack = sr1(syn, verbose=0, timeout=10)
+		synack = sr1(syn, verbose=0, timeout=timeout220)
 		if synack is None:
-			print "No response to SYN from {} after 10 seconds  :(".format(self.target)
+			print "No response to SYN from {} after {} seconds  :(".format(self.target, timeout220)
 			print "[Continue]\n\n"
 			return 1
 
@@ -46,9 +49,9 @@ class PacketCraft:
 		self.seq = self.seq + 1
 
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
-		banner220 = sr1(ack, verbose=0, timeout=11)
+		banner220 = sr1(ack, verbose=0, timeout=timeout220)
 		if banner220 is None:
-			print "No 220 banner received from {}  :(".format(self.target)
+			print "No 220 banner received from {} after {} seconds :(".format(self.target, timeout220)
 			print "[Continue]\n\n"
 			return 1
 
@@ -116,15 +119,15 @@ class PacketCraft:
 					# self.ack = self.ack + len(tcp_packet.payload) # = 0
 					self.ack = self.ack + len(tcp_packet)
 					# print "Adding {} bytes to the ack length".format(len(tcp_packet.payload)) # = 0
-					print "Adding {} bytes to the ack length".format(len(tcp_packet))
+					# print "Adding {} bytes to the ack length".format(len(tcp_packet))
 
-					print "len(extensions[0].payload): {}".format(len(extensions[0].payload))
-					print "len(extensions[0].payload.payload): {}".format(len(extensions[0].payload.payload))
-					print "len(extensions[0].payload.payload.payload): {}".format(len(extensions[0].payload.payload.payload))
+					# print "len(extensions[0].payload): {}".format(len(extensions[0].payload))
+					# print "len(extensions[0].payload.payload): {}".format(len(extensions[0].payload.payload))
+					# print "len(extensions[0].payload.payload.payload): {}".format(len(extensions[0].payload.payload.payload))
 
-					print "len(extensions.payload): {}".format(len(extensions.payload))
-					print "len(extensions.payload.payload): {}".format(len(extensions.payload.payload))
-					print "len(extensions.payload.payload.payload): {}".format(len(extensions.payload.payload.payload))
+					# print "len(extensions.payload): {}".format(len(extensions.payload))
+					# print "len(extensions.payload.payload): {}".format(len(extensions.payload.payload))
+					# print "len(extensions.payload.payload.payload): {}".format(len(extensions.payload.payload.payload))
 
 					self.seq = self.seq + 9
 					ip = IP(dst=self.target)
@@ -209,7 +212,7 @@ class PacketCraft:
 			# result = smtpConnection.startTLS(i)
 			ip = IP(dst=self.target, ttl=i)
 			startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("STARTTLS\r\n") #110
-			TLSbanner = sr1(startTLS, verbose=0, timeout=4)
+			TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL)
 
 			# send(startTLS)
 			# TLSbanner = sniff(filter="host {}".format(self.target), count=1)
@@ -220,7 +223,7 @@ class PacketCraft:
 			# serverIP = str(TLSbanner[0].src)
 			if TLSbanner is None:
 				# No reply
-				print "No response to STARTTLS request from hop %d" % i
+				print "No response to STARTTLS request from hop {} after {} seconds".format(i, timeoutTTL)
 				continue
 			elif done.match(TLSbanner.src):
 				print "%d hops away: " % i , TLSbanner.src ,
@@ -274,13 +277,16 @@ with open('ipAddresses.txt') as inFile:
 		smtpConnection = PacketCraft(target)
 		done = smtpConnection.get220banner()
 		if done is 1:
+			# List the fails
+			print 'Error: {} did not respond with their 220 Banner'.format(target)
 			continue
-			# TODO: keep a list of all the fails
+			
 
 		done = smtpConnection.get250extensions()
 		if done is 1:
 			smtpConnection.closeConnection()
-			# TODO: keep a list of all the fails
+			# List the fails
+			print 'Error: {} did not respond with their 250 Extensions'.format(target)
 			continue
 		smtpConnection.startTLS(tlsTTL)
 		smtpConnection.closeConnection()
