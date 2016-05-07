@@ -18,8 +18,8 @@ Hello = re.compile('.*H ?e ?l ?l ?o.*', re.IGNORECASE)
 two50 = re.compile('2 ?5 ?0.*', re.IGNORECASE)
 win = re.compile('.*S ?T ?A ?R ?T ?T ?L ?S.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
 errorXXXX = re.compile('.*X ?X ?X ?X.*', re.IGNORECASE)
-timeout220 = 3
-timeoutTTL = 1
+timeout220 = 13
+timeoutTTL = 3
 
 """
 Sends a STARTTLS request to mail servers
