@@ -15,10 +15,10 @@ import Queue
 tlsTTL = 4
 size250 = re.compile('.*?S ?I ?Z ?E.*?', re.DOTALL)
 Hello = re.compile('.*H ?e ?l ?l ?o.*', re.IGNORECASE)
-two50 = re.compile('2 ?5 ?0.*', re.IGNORECASE)
+two50 = re.compile('.*2 ?5 ?0.*', re.IGNORECASE)
 win = re.compile('.*S ?T ?A ?R ?T ?T ?L ?S.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
 errorXXXX = re.compile('.*X ?X ?X ?X.*', re.IGNORECASE)
-timeout220 = 3
+timeout220 = 4
 timeoutTTL = 1
 
 """
@@ -98,11 +98,16 @@ class PacketCraft:
 				ip = IP(dst=self.target)
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
 				send(ack, verbose=0)
+				print "Sent ACK line 100"
 
 				# Send HELO instead
 				helo = IP(dst=self.target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("HELO ME\r\n") #110
 				extensions = sr1(helo, verbose=0, timeout=5)
-				ext_packet = str(extensions[0].payload.payload)
+				try:
+					ext_packet = str(extensions[0].payload.payload)
+				except TypeError as e:
+					print "TypeError:  Remote server may be graylisting us"
+					return 1
 				
 				print "Sent HELO, got {}".format(ext_packet) ,
 				# if EHLO fails, but HELO works, they won't send 250-SIZE, so break here??
@@ -134,6 +139,7 @@ class PacketCraft:
 					ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110?
 					send(ack, verbose=0)
 					print "Sent ack of length: {}".format(self.ack)
+					print "Sent ACK line 138"
 
 					break
 
@@ -153,6 +159,7 @@ class PacketCraft:
 				ip = IP(dst=self.target)
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 				send(ack, verbose=0)
+				print "Sent ACK line 158"
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			elif two50.match(ext_packet):
@@ -169,6 +176,7 @@ class PacketCraft:
 				ip = IP(dst=self.target)
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 				send(ack, verbose=0)
+				print "Sent ACK line 175"
 				self.ack = self.ack - len(tcp_packet.payload)
 				extensions = sniff(filter="host {}".format(self.target), count=1, timeout=5)
 			else:
@@ -192,6 +200,7 @@ class PacketCraft:
 		ip = IP(dst=self.target)
 		ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 		send(ack, verbose=0)
+		print "Sent ACK line 199"
 
 		# print "{}".format(extensions[0].payload.payload.payload)
 		# print "[Got 250 Extensions for {}]".format(self.target)
