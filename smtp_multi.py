@@ -51,9 +51,9 @@ class WorkerThread(threading.Thread) :
 				print "Got target IP: {}".format(target)
 			except  Queue.Empty :
 				print "Worker %d exiting. Scanned %d ports ..." % (self.tid, total_ips)
-                return
-            # Begin scanning
-            # Using scapy
+                		return
+            		# Begin scanning
+            		# Using scapy
 			print "[1. Get 220 Banner for {}]".format(target)
 			self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop
 			ip = IP(dst=target)
@@ -260,7 +260,7 @@ class WorkerThread(threading.Thread) :
 			print '\n'
 
 			self.queue.task_done()
-            total_ips += 1
+            		total_ips += 1
 
 
 queue = Queue.Queue()
