@@ -35,7 +35,7 @@ class WorkerThread(threading.Thread) :
 		self.seq = 100
 		self.ack = 0
 		self.dport = 25
-		self.sport = random.randint(1024,65535)
+		self.sport = random.randint(1024,65535) # TODO: ask system for an unused port
 		# self.target = targetIP
 		self.ehloTTL = 64
 		print "Worker %d Reporting for Service!" %self.tid
@@ -52,17 +52,19 @@ class WorkerThread(threading.Thread) :
 			except  Queue.Empty :
 				print "Worker %d exiting. Scanned %d ports ..." % (self.tid, total_ips)
                 		return
-            		# Begin scanning
-            		# Using scapy
+                		#continue
+    		# Begin scanning
+    		# Using scapy
 			print "[1. Get 220 Banner for {}]".format(target)
-			self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop
+			self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop # TODO: ask system for an unused port
 			ip = IP(dst=target)
 			syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
 			synack = sr1(syn, verbose=0, timeout=timeout220)
 			if synack is None:
 				print "No response to SYN from {} after {} seconds  :(".format(target, timeout220)
 				print "[Continue]\n\n"
-				return 1
+				#return #1
+				continue
 
 			self.ack = synack.seq + 1
 			self.seq = self.seq + 1
@@ -72,7 +74,8 @@ class WorkerThread(threading.Thread) :
 			if banner220 is None:
 				print "No 220 banner received from {} after {} seconds :(".format(target, timeout220)
 				print "[Continue]\n\n"
-				return 1
+				#return #1
+				continue
 
 			self.ack = self.ack + len(banner220.payload.payload)
 			ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
@@ -90,7 +93,7 @@ class WorkerThread(threading.Thread) :
 			# extensions = sr1(ehlo, verbose=0, timeout=5)  ## NO! the next packet is an ACK. need to sniff.
 
 			send(ehlo, verbose=0)
-			extensions = sniff(filter="host {}".format(target), count=1, timeout=5)
+			extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 			
 			for x in range(1, 5):
 				print "Attempt %d/5: " % x ,
@@ -126,7 +129,8 @@ class WorkerThread(threading.Thread) :
 						ext_packet = str(extensions[0].payload.payload)
 					except TypeError as e:
 						print "TypeError:  Remote server may be graylisting us"
-						return 1
+						#return #1
+						continue
 					
 					print "Sent HELO, got {}".format(ext_packet) ,
 					# if EHLO fails, but HELO works, they won't send 250-SIZE, so break here??
@@ -166,7 +170,7 @@ class WorkerThread(threading.Thread) :
 					send(ack, verbose=0)
 					print "Sent ACK line 158"
 					self.ack = self.ack - len(tcp_packet.payload)
-					extensions = sniff(filter="host {}".format(target), count=1, timeout=5)
+					extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 				elif two50.match(ext_packet):
 					print "Packet contains 250"
 					try:
@@ -183,20 +187,21 @@ class WorkerThread(threading.Thread) :
 					send(ack, verbose=0)
 					print "Sent ACK line 175"
 					self.ack = self.ack - len(tcp_packet.payload)
-					extensions = sniff(filter="host {}".format(target), count=1, timeout=5)
+					extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 				else:
 					print "Packet does not contain [SIZE | XXXX | Hello | 250]"
 					
 					# print ext_packet
-					extensions = sniff(filter="host {}".format(target), count=1, timeout=5)
+					extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 
 			try:
 				tcp_packet = extensions[0].payload.payload
 			except IndexError as e:
 				print "IndexError"
 				print "Could not get 250-Extensions from {}".format(target)
-				print "[Return 1]"
-				return 1
+				print "[Continue]"
+				#return #1
+				continue
 
 			self.ack = self.ack + len(tcp_packet.payload)
 			self.seq = self.seq + 9
@@ -264,17 +269,9 @@ class WorkerThread(threading.Thread) :
 
 
 queue = Queue.Queue()
-
 threads = []
 
-for i in range (1, 10):
-	print "Creating WorkerThread : %d" %i
-	worker = WorkerThread(queue, i)
-	worker.setDaemon(True)
-	worker.start()
-	threads.append(worker)
-	print "WorkerThread %d Created!" %i
-
+# Create the queue that the threads will pull from
 # for j in range (1, 100):
 # 	queue.put(j)
 with open('ipAddresses.txt') as inFile:
@@ -282,12 +279,28 @@ with open('ipAddresses.txt') as inFile:
 		target = str(line.rstrip('\n'))
 		queue.put(target)
 
+# Create the threads
+for i in range (1, 2):
+	print "Creating WorkerThread : %d" %i
+	worker = WorkerThread(queue, i)
+	worker.setDaemon(True)
+	worker.start()
+	threads.append(worker)
+	print "WorkerThread %d Created!" %i
+
+print "main: before queue.join()"
 queue.join()
+print "main: after queue.join()"
 
 # wait for all threads to exit
 
+print "main: before joining all the threads"
 for item in threads:
+	print "before joining thread {}".format(item)
 	item.join()
+	print "after joining thread {}".format(item)
+
+print "main: after joining all the threads"
 
 print "Scanning Complete!"
 
