@@ -18,6 +18,7 @@ tlsTTL = 4
 size250 = re.compile('.*?S ?I ?Z ?E.*?', re.DOTALL)
 Hello = re.compile('.*H ?e ?l ?l ?o.*', re.IGNORECASE)
 two50 = re.compile('.*2 ?5 ?0.*', re.IGNORECASE)
+ready = re.compile('.*r ?e ?a ?d ?y.*', re.IGNORECASE)
 win = re.compile('.*S ?T ?A ?R ?T ?T ?L ?S.*', re.IGNORECASE | re.DOTALL | re.MULTILINE)
 errorXXXX = re.compile('.*X ?X ?X ?X.*', re.IGNORECASE)
 timeout220 = 4
@@ -67,8 +68,14 @@ class WorkerThread(threading.Thread) :
 				print "[1. Get 220 Banner for {}]".format(target)
 				self.sport = random.randint(1024,65535)		# needs a new port/socket for each loop # TODO: ask system for an unused port
 				ip = IP(dst=target)
+		# [1]
 				syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
+		# [2]
 				synack = sr1(syn, verbose=0, timeout=timeout220)
+				# send(syn, verbose=0)
+				# receive = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=timeout220)
+				# synack = receive[0]
+
 				if synack is None:
 					print "No response to SYN from {} after {} seconds  :(".format(target, timeout220)
 					print "[Task done & Return]\n\n"
@@ -76,11 +83,29 @@ class WorkerThread(threading.Thread) :
 					return
 					# continue
 
+				
+				# print "dir of synack: {}".format(dir(synack))
+
 				self.ack = synack.seq + 1
 				self.seq = self.seq + 1
 
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
 				banner220 = sr1(ack, verbose=0, timeout=timeout220)
+		# [3]
+				# send(ack, verbose=0)
+		# [4]
+				# receive = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=timeout220)
+				# send(ack, verbose=0)
+				# banner220 = receive[0]
+				# print "banner220.payload: {}".format(banner220.payload) ,
+				# print "banner220.payload.payload: {}".format(banner220.payload.payload) ,
+				# print "banner220.payload.payload.payload: {}".format(banner220.payload.payload.payload) ,
+
+				# banner220 = banner220[0]
+				# print "banner220.payload: {}".format(banner220.payload) ,
+				# print "banner220.payload.payload: {}".format(banner220.payload.payload) ,
+				# print "banner220.payload.payload.payload: {}".format(banner220.payload.payload.payload) ,				
+
 				if banner220 is None:
 					print "No 220 banner received from {} after {} seconds :(".format(target, timeout220)
 					print "[Task done & Return]\n\n"
@@ -89,10 +114,16 @@ class WorkerThread(threading.Thread) :
 					continue
 
 				self.ack = self.ack + len(banner220.payload.payload)
+				# self.ack = self.ack + len(banner220.payload.payload.payload)
+				# print "len(banner220.payload): {}".format(len(banner220.payload))
+				# print "len(banner220.payload.payload): {}".format(len(banner220.payload.payload))
+				# print "len(banner220.payload.payload.payload): {}".format(len(banner220.payload.payload.payload))
+
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
+		# [5]
 				send(ack, verbose=0)
 
-				print "{}".format(banner220.payload.payload) ,
+				# print "{}".format(banner220.payload.payload) ,
 				# print "[Got 220 Banner for {}]".format(target)
 				#return 0
 				
@@ -101,11 +132,14 @@ class WorkerThread(threading.Thread) :
 				print "[2. Get 250 Extensions for {}]".format(target)
 				# print target
 				ehlo = IP(dst=target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("EHLO ME\r\n") #101
-				# extensions = sr1(ehlo, verbose=0, timeout=5)  ## NO! the next packet is an ACK. need to sniff.
+				extensions = sr1(ehlo, verbose=0, timeout=5)  ## NO! the next packet is an ACK. need to sniff.
+				# extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+				# send(ehlo, verbose=0)
+				# receive = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+				# extensions = receive[0]
+				#print "dir of tcp packet payload: {}".format(dir(extensions[0].payload.payload.payload))
 
-				send(ehlo, verbose=0)
-				extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
-				
+
 				for x in range(1, 5):
 					print "Attempt %d/5: " % x ,
 					try:
@@ -114,6 +148,11 @@ class WorkerThread(threading.Thread) :
 					except IndexError as e:
 						print "IndexError"
 						continue
+					except TypeError as e:
+							print "TypeError:  Remote server may be graylisting us"
+							# "421 mail.psych.uic.edu closing connection"
+							#return #1
+							continue
 
 					if size250.match(ext_packet):
 						print 'Packet contains 250-SIZE. Got extensions, OK to proceed.'
@@ -200,10 +239,30 @@ class WorkerThread(threading.Thread) :
 						print "Sent ACK line 175"
 						self.ack = self.ack - len(tcp_packet.payload)
 						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+					elif ready.match(ext_packet):
+						print "Packet contains ready"
+						try:
+							tcp_packet = extensions[0].payload.payload
+						except IndexError as e:
+							print "IndexError"
+							continue
+
+						self.ack = self.ack + len(tcp_packet.payload)
+						self.seq = self.seq + 9
+
+						ip = IP(dst=target)
+						ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
+						send(ack, verbose=0)
+						print "Sent ACK line 175"
+						self.ack = self.ack - len(tcp_packet.payload)
+						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 					else:
-						print "Packet does not contain [SIZE | XXXX | Hello | 250]"
-						
-						# print ext_packet
+						print "Packet does not contain [SIZE | XXXX | Hello | 250 | ready]"
+						# print "extensions.payload: {}".format(extensions.payload) ,
+						print extensions[0].summary()
+						print "extensions[0].payload.payload: {}".format(extensions[0].payload.payload) ,
+						print "extensions[0].payload.payload.payload: {}".format(extensions[0].payload.payload.payload) ,
+						print "extensions[0].payload.payload.payload.payload: {}".format(extensions[0].payload.payload.payload.payload) ,
 						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 
 				try:
@@ -212,6 +271,10 @@ class WorkerThread(threading.Thread) :
 					print "IndexError"
 					print "Could not get 250-Extensions from {}".format(target)
 					print "[Continue]\n"
+					#return #1
+					continue
+				except TypeError as e:
+					print "TypeError:  Remote server may be graylisting us"
 					#return #1
 					continue
 
@@ -256,24 +319,24 @@ class WorkerThread(threading.Thread) :
 						# break
 					else:
 						print "%d hops away: " % i , TLSbanner.src , 
-						mail_server["ICMP_2nd-to-last_IP"] = TLSbanner.src
+						mail_server["2nd-to-last_IP"] = TLSbanner.src
 						# print '{}'.format(TLSbanner.load)
 						try:
 							print 'returned: {}'.format(TLSbanner.load) ,
-							mail_server["ICMP_2nd-to-last_payload"] = TLSbanner.load
+							mail_server["2nd-to-last_payload"] = TLSbanner.load
 							# Keep track of the last known responses, in case later responses are blocked or null
 							mail_server["last_known_response"] = TLSbanner.load
 							mail_server["last_known_response_IP"] = TLSbanner.src
 							mail_server["last_known_hops"] = i
 					 	except AttributeError as e:
 					 		print "returned: AttributeError"
-					 		mail_server["ICMP_2nd-to-last_payload"] = "ICMP_2nd-to-last_payload_did_not_contain_payload"
+					 		mail_server["2nd-to-last_payload"] = "no_payload"
 
 				print "Dict for {}".format(target)
 				pprint.pprint(mail_server, width=1)
 
 				# TODO: Print to results.txt
-				f = open('results.txt', 'w')
+				f = open('results.txt', 'a')
 				print >> f, mail_server
 				# f.write(mail_server)
 				f.close()
@@ -286,7 +349,12 @@ class WorkerThread(threading.Thread) :
 
 				packet = IP(dst=target)/TCP(sport=self.sport,dport=self.dport,flags="A",seq=121, ack=self.ack+1)
 				send(packet, verbose=0)
-				print '\n'
+				# print '\n'
+
+				# Send a reset packet
+				packet = IP(dst=target)/TCP(sport=self.sport,dport=self.dport,flags="R",seq=121, ack=self.ack+1)
+				send(packet, verbose=0)
+				print '\n'				
 
 				self.queue.task_done()
 
