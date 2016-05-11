@@ -1,0 +1,10 @@
+Todo:
+how to stop when finished?
+get list of IPs
+check Scapy - does sr1 listen for ANY incoming?  or limited by IP? or source port? or dest.port?
+    Option 1:
+    If i use send(syn) then sniff(synack) then send(ack), then the last ACK doesn't wait for Sniff to finish. It just fires off an ACK from nowhere, and never ACKs the correct sequence.  How to make send(ack) - or the whole function - WAIT until Sniff() picks ups the synack??
+    Option 2:
+    If I use synack=sr1(syn), it appears to grab ANY incoming packet.  How to limit sr1() to ONLY listen for incoming packets on it's own source port??
+
+
