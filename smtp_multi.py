@@ -71,7 +71,8 @@ class WorkerThread(threading.Thread) :
 		# [1]
 				syn = ip/TCP(sport=self.sport, dport=self.dport, flags="S", seq=self.seq)
 		# [2]
-				synack = sr1(syn, verbose=0, timeout=timeout220)
+				# synack = sr1(syn, verbose=0, timeout=timeout220, filter="host {} and port {}".format(target, self.sport))
+				synack = sr1(syn, verbose=0, timeout=timeout220, filter="port %d"%(self.sport))
 				# send(syn, verbose=0)
 				# receive = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=timeout220)
 				# synack = receive[0]
@@ -90,7 +91,7 @@ class WorkerThread(threading.Thread) :
 				self.seq = self.seq + 1
 
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #101
-				banner220 = sr1(ack, verbose=0, timeout=timeout220)
+				banner220 = sr1(ack, verbose=0, timeout=timeout220, filter="port %d"%(self.sport))
 		# [3]
 				# send(ack, verbose=0)
 		# [4]
@@ -123,8 +124,8 @@ class WorkerThread(threading.Thread) :
 		# [5]
 				send(ack, verbose=0)
 
-				# print "{}".format(banner220.payload.payload) ,
-				# print "[Got 220 Banner for {}]".format(target)
+				print "{}".format(banner220.payload.payload) ,
+				print "[Got 220 Banner for {}]".format(target)
 				#return 0
 				
 				##############################################################################################
@@ -132,7 +133,8 @@ class WorkerThread(threading.Thread) :
 				print "[2. Get 250 Extensions for {}]".format(target)
 				# print target
 				ehlo = IP(dst=target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("EHLO ME\r\n") #101
-				extensions = sr1(ehlo, verbose=0, timeout=5)  ## NO! the next packet is an ACK. need to sniff.
+				extensions = sr1(ehlo, verbose=0, timeout=5, filter="port %d"%(self.sport))  ## the next packet might be an ACK. need to sniff?
+				print "sr1() for extensions using port %d"%(self.sport)
 				# extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 				# send(ehlo, verbose=0)
 				# receive = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
@@ -141,7 +143,7 @@ class WorkerThread(threading.Thread) :
 
 
 				for x in range(1, 5):
-					print "Attempt %d/5: " % x ,
+					print "\nAttempt %d/5: " % x ,
 					try:
 						ext_packet = str(extensions[0].payload.payload.payload)
 						# print str(extensions[0].payload.payload.payload)
@@ -149,7 +151,7 @@ class WorkerThread(threading.Thread) :
 						print "IndexError"
 						continue
 					except TypeError as e:
-							print "TypeError:  Remote server may be graylisting us"
+							print "TypeError:  Remote server may be graylisting us\n"
 							# "421 mail.psych.uic.edu closing connection"
 							#return #1
 							continue
@@ -175,7 +177,8 @@ class WorkerThread(threading.Thread) :
 
 						# Send HELO instead
 						helo = IP(dst=target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("HELO ME\r\n") #110
-						extensions = sr1(helo, verbose=0, timeout=5)
+						extensions = sr1(helo, verbose=0, timeout=5, filter="port %d"%(self.sport))# filter="host {} and port {}".format(target, self.sport))
+						print "sr1() for extensions using host {} and port {}".format(target, self.sport)
 						try:
 							ext_packet = str(extensions[0].payload.payload)
 						except TypeError as e:
@@ -221,7 +224,8 @@ class WorkerThread(threading.Thread) :
 						send(ack, verbose=0)
 						print "Sent ACK line 158"
 						self.ack = self.ack - len(tcp_packet.payload)
-						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						extensions = sniff(filter="port %d"%(self.sport), count=1, timeout=5)#filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						print "\nSniffing for extensions using host {} and port {}".format(target, self.sport)
 					elif two50.match(ext_packet):
 						print "Packet contains 250"
 						try:
@@ -238,7 +242,8 @@ class WorkerThread(threading.Thread) :
 						send(ack, verbose=0)
 						print "Sent ACK line 175"
 						self.ack = self.ack - len(tcp_packet.payload)
-						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						extensions = sniff(filter="port %d"%(self.sport), count=1, timeout=5)#filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						print "\nSniffing for extensions using port %d"%(self.sport)
 					elif ready.match(ext_packet):
 						print "Packet contains ready"
 						try:
@@ -255,15 +260,18 @@ class WorkerThread(threading.Thread) :
 						send(ack, verbose=0)
 						print "Sent ACK line 175"
 						self.ack = self.ack - len(tcp_packet.payload)
-						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						extensions = sniff(filter="port %d"%(self.sport), count=1, timeout=5)#filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						# print "host {} and port {}".format(target, self.sport)
+						print "\nSniffing for extensions using port %d"%(self.sport)
 					else:
 						print "Packet does not contain [SIZE | XXXX | Hello | 250 | ready]"
 						# print "extensions.payload: {}".format(extensions.payload) ,
 						print extensions[0].summary()
-						print "extensions[0].payload.payload: {}".format(extensions[0].payload.payload) ,
-						print "extensions[0].payload.payload.payload: {}".format(extensions[0].payload.payload.payload) ,
-						print "extensions[0].payload.payload.payload.payload: {}".format(extensions[0].payload.payload.payload.payload) ,
-						extensions = sniff(filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						print "\nextensions[0].payload.payload: {}".format(extensions[0].payload.payload) ,
+						print "\nextensions[0].payload.payload.payload: {}".format(extensions[0].payload.payload.payload) ,
+						print "\nextensions[0].payload.payload.payload.payload: {}".format(extensions[0].payload.payload.payload.payload) ,
+						extensions = sniff(filter="port %d"%(self.sport), count=1, timeout=5)#filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
+						print "\nSniffing for extensions using port %d"%(self.sport)
 
 				try:
 					tcp_packet = extensions[0].payload.payload
@@ -297,7 +305,10 @@ class WorkerThread(threading.Thread) :
 					# result = smtpConnection.startTLS(i)
 					ip = IP(dst=target, ttl=i)
 					startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("STARTTLS\r\n") #110
-					TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL)
+					TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL, filter="icmp")
+					#, filter="host {}".format(target)) # can't filter by port, cuz ICMP doesn't care
+					# can't filter by IP, cuz the TTL times out on different IPs each time
+					# if I filter by type=icmp... then it doesn't catch the last... one-more-try?
 
 					if TLSbanner is None:
 						# No reply
@@ -313,8 +324,10 @@ class WorkerThread(threading.Thread) :
 							break
 					 	except AttributeError as e:
 					 		print "returned: AttributeError. Trying once more.."
-					 		i = i-1
-					 		mail_server["total_hops"] = i-1
+					 		TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL)
+					 		# i = i-1
+					 		# mail_server["total_hops"] = i-1
+					 		mail_server["response_from_target"] = TLSbanner.load
 
 						# break
 					else:

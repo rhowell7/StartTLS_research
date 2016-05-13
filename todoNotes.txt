@@ -1,6 +1,10 @@
 Todo:
 how to stop when finished?
 get list of IPs
+How to assign source port?
+    Option 1: random.  assign with each loop. risk giving same port multiple times.
+    Option 2: incrementing (15119-19225 or 20001-24799). load the queue with tuples, each IP comes with a sourceport. issues if we start on 15120 for every run, if previous servers are trying to respond on the s-port.
+
 check Scapy - does sr1 listen for ANY incoming?  or limited by IP? or source port? or dest.port?
     Option 1:
     If i use send(syn) then sniff(synack) then send(ack), then the last ACK doesn't wait for Sniff to finish. It just fires off an ACK from nowhere, and never ACKs the correct sequence.  How to make send(ack) - or the whole function - WAIT until Sniff() picks ups the synack??
