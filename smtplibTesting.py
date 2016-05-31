@@ -1,21 +1,38 @@
-#!/usr/bin/python
-
 import smtplib
+import email.utils
+from email.mime.text import MIMEText
+import getpass
 
-sender = 'prez@whitehouse.com'
-receivers = ['mary@rosehowell.com']
+# Prompt the user for connection info
+to_email = raw_input('Recipient: ')
+servername = raw_input('Mail server name: ')
+username = raw_input('Mail user name: ')
+password = getpass.getpass("%s's password: " % username)
 
-message = """From: theprez <prez@whitehouse.com>
-To: Mary <mary@rosehowell.com>
-Subject: SMTP e-mail test
+# Create the message
+msg = MIMEText('Test message from PyMOTW.')
+msg.set_unixfrom('author')
+msg['To'] = email.utils.formataddr(('Recipient', to_email))
+msg['From'] = email.utils.formataddr(('Author', 'author@example.com'))
+msg['Subject'] = 'Test from PyMOTW'
 
-This is a test e-mail message.
-"""
-
+server = smtplib.SMTP(servername)
 try:
-   smtpObj = smtplib.SMTP('localhost')
-   print "dir of smtpObj: {}".format(dir(smtpObj))
-   smtpObj.sendmail(sender, receivers, message)         
-   print "Successfully sent email"
-except smtplib.SMTPException:
-   print "Error: unable to send email"
+    server.set_debuglevel(True)
+
+    # identify ourselves, prompting server for supported features
+    server.ehlo()
+
+    # If we can encrypt this session, do it
+    if server.has_extn('STARTTLS'):
+        server.starttls()
+        server.ehlo() # re-identify ourselves over TLS connection
+
+    
+    print "dir of server: {}".format(dir(server))
+    print "dir of server.sock: {}".format(dir(server.sock))
+
+    # server.login(username, password)
+    # server.sendmail('author@example.com', [to_email], msg.as_string())
+finally:
+    server.quit()
