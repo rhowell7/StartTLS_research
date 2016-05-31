@@ -178,7 +178,7 @@ class WorkerThread(threading.Thread) :
 						# Send HELO instead
 						helo = IP(dst=target, ttl=self.ehloTTL)/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("HELO ME\r\n") #110
 						extensions = sr1(helo, verbose=0, timeout=5, filter="port %d"%(self.sport))# filter="host {} and port {}".format(target, self.sport))
-						print "sr1() for extensions using host {} and port {}".format(target, self.sport)
+						print "sr1() for extensions using port {}".format(self.sport)
 						try:
 							ext_packet = str(extensions[0].payload.payload)
 						except TypeError as e:
