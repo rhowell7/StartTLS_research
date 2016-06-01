@@ -81,12 +81,11 @@ class WorkerThread(threading.Thread) :
 					print "No response to SYN from {} after {} seconds  :(".format(target, timeout220)
 					print "[Task done & Return]\n\n"
 					self.queue.task_done()
-					return
-					# continue
+					# break
+					# return
+					continue
 
-				
 				# print "dir of synack: {}".format(dir(synack))
-
 				self.ack = synack.seq + 1
 				self.seq = self.seq + 1
 
@@ -141,9 +140,10 @@ class WorkerThread(threading.Thread) :
 				# extensions = receive[0]
 				#print "dir of tcp packet payload: {}".format(dir(extensions[0].payload.payload.payload))
 
-
-				for x in range(1, 5):
-					print "\nAttempt %d/5: " % x ,
+				need_extensions = True
+				while need_extensions:
+				# for x in range(1, 5):
+					# print "\nAttempt %d/5: " % x ,
 					try:
 						ext_packet = str(extensions[0].payload.payload.payload)
 						# print str(extensions[0].payload.payload.payload)
@@ -152,9 +152,8 @@ class WorkerThread(threading.Thread) :
 						continue
 					except TypeError as e:
 							print "TypeError:  Remote server may be graylisting us\n"
-							# "421 mail.psych.uic.edu closing connection"
-							#return #1
-							continue
+							print "[2. Unable to get 250 Extensions for {}. Giving up.]  :(\n".format(target)
+							break
 
 					if size250.match(ext_packet):
 						print 'Packet contains 250-SIZE. Got extensions, OK to proceed.'
@@ -267,9 +266,9 @@ class WorkerThread(threading.Thread) :
 						print "Packet does not contain [SIZE | XXXX | Hello | 250 | ready]"
 						# print "extensions.payload: {}".format(extensions.payload) ,
 						print extensions[0].summary()
-						print "\nextensions[0].payload.payload: {}".format(extensions[0].payload.payload) ,
-						print "\nextensions[0].payload.payload.payload: {}".format(extensions[0].payload.payload.payload) ,
-						print "\nextensions[0].payload.payload.payload.payload: {}".format(extensions[0].payload.payload.payload.payload) ,
+						# print "\nextensions[0].payload.payload: {}".format(extensions[0].payload.payload) ,
+						# print "\nextensions[0].payload.payload.payload: {}".format(extensions[0].payload.payload.payload) ,
+						# print "\nextensions[0].payload.payload.payload.payload: {}".format(extensions[0].payload.payload.payload.payload) ,
 						extensions = sniff(filter="port %d"%(self.sport), count=1, timeout=5)#filter="host {} and port {}".format(target, self.sport), count=1, timeout=5)
 						print "\nSniffing for extensions using port %d"%(self.sport)
 
@@ -292,7 +291,7 @@ class WorkerThread(threading.Thread) :
 				ip = IP(dst=target)
 				ack = ip/TCP(sport=self.sport, dport=self.dport, flags="A", seq=self.seq, ack=self.ack) #110
 				send(ack, verbose=0)
-				print "Sent ACK line 206"
+				print "[2. Got SMTP Extensions]\n"
 
 				##############################################################################################
 				# def startTLS(self, tlsTTL):
@@ -301,8 +300,9 @@ class WorkerThread(threading.Thread) :
 				mail_server["target_ip"] = target
 				done = re.compile(target)
 
-				for i in range (tlsTTL, 30):
+				for i in range (tlsTTL, 46):
 					# result = smtpConnection.startTLS(i)
+					mail_server["total_hops"] = i
 					ip = IP(dst=target, ttl=i)
 					startTLS = ip/TCP(sport=self.sport,dport=self.dport,flags="PA",seq=self.seq,ack=self.ack)/("STARTTLS\r\n") #110
 					TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL, filter="icmp")
@@ -325,25 +325,27 @@ class WorkerThread(threading.Thread) :
 					 	except AttributeError as e:
 					 		print "returned: AttributeError. Trying once more.."
 					 		TLSbanner = sr1(startTLS, verbose=0, timeout=timeoutTTL)
-					 		# i = i-1
-					 		# mail_server["total_hops"] = i-1
-					 		mail_server["response_from_target"] = TLSbanner.load
+					 		try:
+					 			mail_server["response_from_target"] = TLSbanner.load
+					 		except AttributeError as e:
+					 			print "AttributeError"
+					 			mail_server["response_from_target"] = "AttributeError"
 
 						# break
 					else:
 						print "%d hops away: " % i , TLSbanner.src , 
-						mail_server["2nd-to-last_IP"] = TLSbanner.src
+						# mail_server["2nd-to-last_IP"] = TLSbanner.src
 						# print '{}'.format(TLSbanner.load)
 						try:
 							print 'returned: {}'.format(TLSbanner.load) ,
-							mail_server["2nd-to-last_payload"] = TLSbanner.load
+							# mail_server["2nd-to-last_payload"] = TLSbanner.load
 							# Keep track of the last known responses, in case later responses are blocked or null
 							mail_server["last_known_response"] = TLSbanner.load
 							mail_server["last_known_response_IP"] = TLSbanner.src
 							mail_server["last_known_hops"] = i
 					 	except AttributeError as e:
 					 		print "returned: AttributeError"
-					 		mail_server["2nd-to-last_payload"] = "no_payload"
+					 		# mail_server["2nd-to-last_payload"] = "no_payload"
 
 				print "Dict for {}".format(target)
 				pprint.pprint(mail_server, width=1)
@@ -387,7 +389,7 @@ with open('ipAddresses.txt') as inFile:
 # ports = range(1024,65535)
 
 # Create the threads
-for i in range (1, 2):
+for i in range (1, 6):
 	print "Creating WorkerThread : %d" %i
 	worker = WorkerThread(queue, i)
 	worker.setDaemon(True)
