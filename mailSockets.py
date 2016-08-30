@@ -91,26 +91,50 @@ while True:
         send_socket.close()
         recv_socket.close()
 
-    if curr_addr is not None:
-        curr_host = "%s (%s)" % (curr_name, curr_addr)
-    else:
-        curr_host = "* * *"
-    # print "%d\t%s" % (ttl, curr_host)
-    print "ttl: ",
-    print ttl
-    print "tls_response: ",
-    print tls_response
-    # print "tls_response[0]: ",
-    # print tls_response[0]
-    # print "tls_response[1]: ",
-    # print tls_response[1]
-    # print "tls_response[2]: ",
-    # print tls_response[2]
+    if curr_addr is None:
+        # reached the destination, no longer receiving ICMP packets, accept a tcp/ip
+        mySocket.send(startTLS)
+        recvTLS = mySocket.recv(bufferSize)
+        # print ttl
+        # print "StartTLS response from: ",
+        # print curr_addr
+        # print "tls_response: ",
+        # print recvTLS
+        print "{} hops: Reached {}".format(ttl, dest_addr)
+        print "Reached the destination server"
+        print "data: {}".format(recvTLS)
+        break
 
+    print "{} hops: Reached {}".format(ttl, curr_addr)
+
+    """Parse ICMP packet and return an instance of Packet"""
+    tls_response = tls_response[20:]
+    string_len = len(tls_response) - 4 # Ignore IP header
+    pack_format = "!BBH"
+    if string_len:
+        pack_format += "%ss" % string_len
+    unpacked_packet = struct.unpack(pack_format, tls_response)
+    packetType, code, checksum = unpacked_packet[:3]
+    # packetType should be ICMP 11 (timeout)
+    try:
+        data = unpacked_packet[3]
+        # print "packetType: {}".format(packetType)
+        # print "code: {}".format(code)
+        # print "checksum: {}".format(checksum)
+        data = data[32:]
+        print "data: {}".format(data)
+    except IndexError:
+        data = None
+        print "IndexError"
+    # print dir(tls_response)
+    # print type(tls_response)
 
     ttl += 1
-    if curr_addr == dest_addr or ttl > max_hops:
-        break
+    # print 'curr_addr: "{}"'.format(curr_addr)
+    # print 'dest_addr: "{}"'.format(dest_addr)
+    # if curr_addr == dest_addr or ttl > max_hops:
+    #     break
+    
 
 # Close the connection
 def closeSocket(socket):
